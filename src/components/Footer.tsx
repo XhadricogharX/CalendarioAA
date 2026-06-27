@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { gsap } from '../lib/gsap'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 import { Brand } from './Brand'
 import { LegalModal } from './LegalModal'
 import { openInstallGuide } from './InstallApp'
@@ -10,6 +12,9 @@ import {
   IconLock,
   IconArrowUpRight,
   IconArrowDown,
+  IconShare,
+  IconCheck,
+  StarMark,
 } from './icons'
 
 const OFFICIAL = 'https://adelanteandalucia.org'
@@ -21,11 +26,59 @@ const FACEBOOK = 'https://www.facebook.com/AdelanteAndalucia'
 export function Footer() {
   const year = new Date().getFullYear()
   const [legalOpen, setLegalOpen] = useState(false)
+  const [shared, setShared] = useState(false)
+  const root = useRef<HTMLElement>(null)
+  const reduced = useReducedMotion()
+
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el || reduced) return
+    const ctx = gsap.context(() => {
+      gsap.to('.footer-star', {
+        yPercent: -34,
+        rotate: 26,
+        ease: 'none',
+        scrollTrigger: { trigger: el, start: 'top bottom', end: 'bottom top', scrub: true },
+      })
+    }, el)
+    return () => ctx.revert()
+  }, [reduced])
+
+  async function shareSite() {
+    const url = `${window.location.origin}/`
+    const data = {
+      title: 'Adelante Andalucía · Calendario',
+      text: 'Calendario de convocatorias de Adelante Andalucía',
+      url,
+    }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share(data)
+        return
+      }
+    } catch {
+      return // el usuario canceló
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      setShared(true)
+      setTimeout(() => setShared(false), 1600)
+    } catch {
+      /* sin portapapeles */
+    }
+  }
 
   return (
     <>
-    <footer className="relative isolate overflow-hidden bg-forest text-cream grain">
-      <div className="mx-auto max-w-edge edge py-16 sm:py-20">
+    <footer
+      ref={root}
+      className="relative isolate overflow-hidden bg-forest text-cream grain"
+    >
+      <StarMark
+        className="footer-star pointer-events-none absolute -left-[6%] top-[8%] hidden h-[30vmax] w-[30vmax] text-mint/[0.04] sm:block"
+        aria-hidden="true"
+      />
+      <div className="relative mx-auto max-w-edge edge py-16 sm:py-20">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <Brand markClass="h-11 w-11" textClass="text-lg" />
@@ -47,14 +100,33 @@ export function Footer() {
                 <IconFacebook className="h-5 w-5" />
               </Social>
             </div>
-            <button
-              type="button"
-              onClick={openInstallGuide}
-              className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-cream transition-colors hover:border-mint hover:text-mint"
-            >
-              <IconArrowDown className="h-4 w-4" />
-              Instalar app
-            </button>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={openInstallGuide}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-cream transition-colors hover:border-mint hover:text-mint"
+              >
+                <IconArrowDown className="h-4 w-4" />
+                Instalar app
+              </button>
+              <button
+                type="button"
+                onClick={shareSite}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-cream transition-colors hover:border-mint hover:text-mint"
+              >
+                {shared ? (
+                  <>
+                    <IconCheck className="h-4 w-4" />
+                    Enlace copiado
+                  </>
+                ) : (
+                  <>
+                    <IconShare className="h-4 w-4" />
+                    Compartir la web
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <nav className="lg:col-span-3" aria-label="Navegación del pie">

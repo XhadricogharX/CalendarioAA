@@ -46,14 +46,20 @@ export function Hero() {
           '-=1.0',
         )
 
-      // --- Parallax dirigido por el scroll (scrub) ---
+      // --- Parallax dirigido por el scroll (scrub), con varias capas ---
       const scrub = { trigger: el, start: 'top top', end: 'bottom top', scrub: true }
-      gsap.to('.hero-glow', { yPercent: 40, ease: 'none', scrollTrigger: scrub })
-      gsap.to('.hero-star', { yPercent: 32, rotate: 20, ease: 'none', scrollTrigger: scrub })
-      gsap.to('.hero-emblem-wrap', { yPercent: -16, ease: 'none', scrollTrigger: scrub })
+      gsap.to('.hero-glow', { yPercent: 55, ease: 'none', scrollTrigger: scrub })
+      gsap.to('.hero-star', { yPercent: 60, rotate: 45, ease: 'none', scrollTrigger: scrub })
+      gsap.to('.hero-star-2', { yPercent: -42, rotate: -30, ease: 'none', scrollTrigger: scrub })
+      gsap.to('.hero-emblem-wrap', {
+        yPercent: -26,
+        rotate: 10,
+        ease: 'none',
+        scrollTrigger: scrub,
+      })
       gsap.to('.hero-text', {
-        yPercent: -10,
-        opacity: 0.5,
+        yPercent: -14,
+        opacity: 0.4,
         ease: 'none',
         scrollTrigger: scrub,
       })
@@ -77,6 +83,7 @@ export function Hero() {
         aria-hidden="true"
       />
       <StarMark className="hero-star pointer-events-none absolute -left-[10%] bottom-[2%] h-[34vmax] w-[34vmax] text-mint/[0.06]" />
+      <StarMark className="hero-star-2 pointer-events-none absolute right-[5%] top-[14%] hidden h-[15vmax] w-[15vmax] text-mint/[0.05] sm:block" />
 
       <div className="relative mx-auto grid w-full max-w-edge items-center gap-y-12 edge lg:grid-cols-12 lg:gap-x-10">
         <div className="hero-text order-2 lg:order-1 lg:col-span-7">

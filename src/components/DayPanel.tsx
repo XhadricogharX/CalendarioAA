@@ -75,6 +75,8 @@ interface DayPanelProps {
   events: PartyEvent[]
   isAdmin: boolean
   counts: Map<string, number>
+  /** Si se abre desde un enlace/QR de un evento concreto, su id (se resalta y va primero). */
+  focusId?: string | null
   onAttendanceChange: () => void
   onAdd: () => void
   onEdit: (ev: PartyEvent) => void
@@ -88,6 +90,7 @@ export function DayPanel({
   events,
   isAdmin,
   counts,
+  focusId,
   onAttendanceChange,
   onAdd,
   onEdit,
@@ -100,6 +103,14 @@ export function DayPanel({
   const [lightbox, setLightbox] = useState<LightboxState | null>(null)
 
   const idsKey = useMemo(() => events.map((e) => e.id).join(','), [events])
+
+  // Si venimos de un enlace/QR de un evento concreto, ese va primero.
+  const ordered = useMemo(() => {
+    if (!focusId) return events
+    const focused = events.filter((e) => e.id === focusId)
+    if (!focused.length) return events
+    return [...focused, ...events.filter((e) => e.id !== focusId)]
+  }, [events, focusId])
 
   const reloadAttendees = useCallback(async () => {
     if (!open || !isAdmin || !events.length) {
@@ -173,7 +184,8 @@ export function DayPanel({
         </div>
       ) : (
         <ul className="space-y-6">
-          {events.map((ev) => {
+          {ordered.map((ev) => {
+            const isFocused = !!focusId && ev.id === focusId
             const gallery = eventGallery(ev)
             const hero = gallery[0] ?? null
             const heroAspect =
@@ -188,7 +200,11 @@ export function DayPanel({
             return (
               <li
                 key={ev.id}
-                className="overflow-hidden rounded-2xl border border-hairline bg-surface shadow-card"
+                className={`overflow-hidden rounded-2xl border bg-surface shadow-card ${
+                  isFocused
+                    ? 'border-mint-600 ring-2 ring-mint-600/60'
+                    : 'border-hairline'
+                }`}
               >
                 {hero && (
                   <button
@@ -215,6 +231,12 @@ export function DayPanel({
                 )}
 
                 <div className="p-5 sm:p-6">
+                  {isFocused && (
+                    <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-mint/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-green-action">
+                      <IconShare className="h-3.5 w-3.5" />
+                      Este es el evento que buscabas
+                    </p>
+                  )}
                   <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                     <CategoryTag category={ev.category} />
                     {ev.province && (
@@ -643,13 +665,16 @@ function attendedKey(id: string) {
 }
 
 function eventDeepLink(id: string): string {
-  return `${window.location.origin}${window.location.pathname}#/evento/${id}`
+  // Ruta real (no almohadilla) para que al compartirla salga la vista previa
+  // del evento (foto + título) en WhatsApp/redes.
+  return `${window.location.origin}/evento/${id}`
 }
 
 function ShareInline({ event }: { event: PartyEvent }) {
   const [open, setOpen] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [zoom, setZoom] = useState(false)
   const url = eventDeepLink(event.id)
   const canShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function'
@@ -707,14 +732,18 @@ function ShareInline({ event }: { event: PartyEvent }) {
   }
 
   return (
+    <>
     <div className="mt-3 rounded-2xl border border-hairline bg-surface-2/40 p-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         {qr ? (
-          <img
-            src={qr}
-            alt="Código QR del evento"
-            className="h-32 w-32 shrink-0 self-center rounded-xl border border-hairline bg-white sm:self-auto"
-          />
+          <button
+            type="button"
+            onClick={() => setZoom(true)}
+            aria-label="Ampliar código QR"
+            className="shrink-0 cursor-pointer self-center overflow-hidden rounded-xl border border-hairline bg-white transition-transform hover:scale-[1.03] sm:self-auto"
+          >
+            <img src={qr} alt="Código QR del evento" className="h-32 w-32" />
+          </button>
         ) : (
           <div className="grid h-32 w-32 shrink-0 self-center place-items-center rounded-xl border border-hairline text-content/40 sm:self-auto">
             <IconSpinner className="h-5 w-5" />
@@ -722,7 +751,8 @@ function ShareInline({ event }: { event: PartyEvent }) {
         )}
         <div className="w-full min-w-0 flex-1">
           <p className="mb-2 text-sm text-content/65">
-            Escanea el QR o comparte el enlace para que más gente se una.
+            Toca el QR para ampliarlo o comparte el enlace para que más gente se
+            una.
           </p>
           <div className="mb-3 truncate rounded-lg border border-hairline bg-surface px-2.5 py-1.5 text-xs text-content/70">
             {url}
@@ -755,6 +785,34 @@ function ShareInline({ event }: { event: PartyEvent }) {
         </div>
       </div>
     </div>
+
+    {zoom && qr && (
+      <div
+        className="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-5 bg-black/90 p-6 backdrop-blur-sm animate-fade"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Código QR ampliado"
+        onClick={() => setZoom(false)}
+      >
+        <img
+          src={qr}
+          alt="Código QR del evento"
+          className="w-full max-w-[18rem] rounded-2xl border-8 border-white bg-white"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <p className="max-w-xs text-center text-sm text-white/80">
+          Escanea este código con la cámara para abrir el evento.
+        </p>
+        <button
+          type="button"
+          onClick={() => setZoom(false)}
+          className="rounded-full bg-white/15 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/25"
+        >
+          Cerrar
+        </button>
+      </div>
+    )}
+    </>
   )
 }
 

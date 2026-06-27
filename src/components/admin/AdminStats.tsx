@@ -18,16 +18,25 @@ import {
   IconSpinner,
 } from '../icons'
 
+type ExportFormat = 'csv' | 'txt' | 'pdf'
+interface Table {
+  headers: string[]
+  rows: string[][]
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 function csvCell(v: unknown): string {
   const s = String(v ?? '')
   return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-function downloadCsv(name: string, rows: string[][]) {
-  const content = rows.map((r) => r.map(csvCell).join(';')).join('\r\n')
-  const blob = new Blob(['﻿' + content], {
-    type: 'text/csv;charset=utf-8',
-  })
+function triggerDownload(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -36,6 +45,69 @@ function downloadCsv(name: string, rows: string[][]) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+function downloadCsv(name: string, rows: string[][]) {
+  const content = rows.map((r) => r.map(csvCell).join(';')).join('\r\n')
+  triggerDownload(name, new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' }))
+}
+
+function downloadTxt(name: string, title: string, t: Table) {
+  const lines = [
+    `ADELANTE ANDALUCÍA — ${title.toUpperCase()}`,
+    `Generado: ${new Date().toLocaleString('es-ES')}`,
+    `Total: ${t.rows.length}`,
+    '='.repeat(48),
+    '',
+  ]
+  t.rows.forEach((r, i) => {
+    lines.push(`${i + 1}.`)
+    t.headers.forEach((h, j) => {
+      if (r[j]) lines.push(`   ${h}: ${r[j]}`)
+    })
+    lines.push('')
+  })
+  triggerDownload(name, new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }))
+}
+
+/** Abre una vista con estilo de informe y lanza la impresión (guardar como PDF). */
+function printPdf(title: string, t: Table) {
+  const head = t.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')
+  const body = t.rows
+    .map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`)
+    .join('')
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+  <title>${escapeHtml(title)} · Adelante Andalucía</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0b2a20;margin:0;padding:32px}
+    header{display:flex;align-items:center;gap:12px;border-bottom:3px solid #0B7A47;padding-bottom:14px;margin-bottom:18px}
+    .logo{width:32px;height:32px;border-radius:50%;background:#0B7A47}
+    h1{font-size:20px;margin:0}
+    .meta{color:#5a6b63;font-size:12px;margin-top:2px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #dfe6e1;vertical-align:top}
+    th{background:#eaf6ef;font-weight:700}
+    tr:nth-child(even) td{background:#f7faf8}
+    @page{margin:14mm}
+  </style></head><body>
+  <header><div class="logo"></div><div><h1>${escapeHtml(title)}</h1>
+  <div class="meta">Adelante Andalucía · ${t.rows.length} registros · generado el ${new Date().toLocaleString('es-ES')}</div></div></header>
+  <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+  </body></html>`
+
+  const w = window.open('', '_blank')
+  if (!w) {
+    // Si el navegador bloquea la ventana, caemos a descargar el HTML.
+    triggerDownload(`${title.toLowerCase()}.html`, new Blob([html], { type: 'text/html' }))
+    return
+  }
+  w.document.write(html)
+  w.document.close()
+  setTimeout(() => {
+    w.focus()
+    w.print()
+  }, 350)
 }
 
 export function AdminStats() {
@@ -78,13 +150,21 @@ export function AdminStats() {
 
   const maxProv = Math.max(1, ...PROVINCE_ORDER.map((p) => stats.byProvince[p] ?? 0))
 
-  function exportEvents() {
-    const counts = new Map<string, number>()
-    for (const a of attendees)
-      counts.set(a.event_id, (counts.get(a.event_id) ?? 0) + 1)
-    const rows: string[][] = [
-      ['Fecha', 'Hora', 'Tipo', 'Provincia', 'Título', 'Ubicación', 'Descripción', 'Confirmados'],
-      ...events.map((e) => [
+  const countsById = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const a of attendees) m.set(a.event_id, (m.get(a.event_id) ?? 0) + 1)
+    return m
+  }, [attendees])
+
+  const eventById = useMemo(
+    () => new Map(events.map((e) => [e.id, e])),
+    [events],
+  )
+
+  function eventsTable(): Table {
+    return {
+      headers: ['Fecha', 'Hora', 'Tipo', 'Provincia', 'Título', 'Ubicación', 'Descripción', 'Confirmados'],
+      rows: events.map((e) => [
         e.event_date,
         e.start_time ?? '',
         CATEGORIES[e.category].label,
@@ -92,18 +172,16 @@ export function AdminStats() {
         e.title,
         e.location ?? '',
         e.description ?? '',
-        String(counts.get(e.id) ?? 0),
+        String(countsById.get(e.id) ?? 0),
       ]),
-    ]
-    downloadCsv('eventos.csv', rows)
+    }
   }
 
-  function exportAttendees() {
-    const byId = new Map(events.map((e) => [e.id, e]))
-    const rows: string[][] = [
-      ['Fecha evento', 'Evento', 'Nombre', 'Apellido', 'Confirmado el'],
-      ...attendees.map((a) => {
-        const ev = byId.get(a.event_id)
+  function attendeesTable(): Table {
+    return {
+      headers: ['Fecha evento', 'Evento', 'Nombre', 'Apellido', 'Confirmado el'],
+      rows: attendees.map((a) => {
+        const ev = eventById.get(a.event_id)
         return [
           ev?.event_date ?? '',
           ev?.title ?? '',
@@ -112,8 +190,21 @@ export function AdminStats() {
           new Date(a.created_at).toLocaleString('es-ES'),
         ]
       }),
-    ]
-    downloadCsv('asistentes.csv', rows)
+    }
+  }
+
+  function exportEvents(fmt: ExportFormat) {
+    const t = eventsTable()
+    if (fmt === 'csv') downloadCsv('eventos.csv', [t.headers, ...t.rows])
+    else if (fmt === 'txt') downloadTxt('eventos.txt', 'Eventos', t)
+    else printPdf('Eventos', t)
+  }
+
+  function exportAttendees(fmt: ExportFormat) {
+    const t = attendeesTable()
+    if (fmt === 'csv') downloadCsv('asistentes.csv', [t.headers, ...t.rows])
+    else if (fmt === 'txt') downloadTxt('asistentes.txt', 'Asistentes', t)
+    else printPdf('Asistentes', t)
   }
 
   if (loading) {
@@ -133,14 +224,8 @@ export function AdminStats() {
           Resumen
         </h2>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={exportEvents} className="btn-ghost !py-2.5 text-sm">
-            <IconDownload className="h-4 w-4" />
-            Eventos CSV
-          </button>
-          <button type="button" onClick={exportAttendees} className="btn-ghost !py-2.5 text-sm">
-            <IconDownload className="h-4 w-4" />
-            Asistentes CSV
-          </button>
+          <ExportMenu label="Descargar eventos" onPick={exportEvents} />
+          <ExportMenu label="Descargar asistentes" onPick={exportAttendees} />
         </div>
       </div>
 
@@ -181,6 +266,60 @@ export function AdminStats() {
           })}
         </ul>
       </div>
+    </div>
+  )
+}
+
+function ExportMenu({
+  label,
+  onPick,
+}: {
+  label: string
+  onPick: (f: ExportFormat) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const options: { f: ExportFormat; label: string }[] = [
+    { f: 'csv', label: 'CSV (Excel)' },
+    { f: 'txt', label: 'Texto (.txt)' },
+    { f: 'pdf', label: 'PDF (imprimir)' },
+  ]
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="btn-ghost !py-2.5 text-sm"
+      >
+        <IconDownload className="h-4 w-4" />
+        {label}
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-hairline bg-surface shadow-float">
+            {options.map((o) => (
+              <button
+                key={o.f}
+                type="button"
+                onClick={() => {
+                  onPick(o.f)
+                  setOpen(false)
+                }}
+                className="block w-full cursor-pointer px-4 py-2.5 text-left text-sm font-medium text-content/80 transition-colors hover:bg-content/[0.06] hover:text-title"
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

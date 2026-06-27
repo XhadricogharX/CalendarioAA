@@ -33,6 +33,13 @@ export function Identity() {
     const ctx = gsap.context(() => {
       gsap.to('.id-star-bg', {
         yPercent: -28,
+        rotate: 16,
+        ease: 'none',
+        scrollTrigger: { trigger: el, start: 'top bottom', end: 'bottom top', scrub: true },
+      })
+      gsap.to('.id-star-2', {
+        yPercent: 38,
+        rotate: -24,
         ease: 'none',
         scrollTrigger: { trigger: el, start: 'top bottom', end: 'bottom top', scrub: true },
       })
@@ -58,6 +65,7 @@ export function Identity() {
       className="relative scroll-mt-20 overflow-hidden bg-page py-20 sm:py-28"
     >
       <StarMark className="id-star-bg pointer-events-none absolute -right-[6%] top-10 h-[26vmax] w-[26vmax] text-mint/[0.05]" />
+      <StarMark className="id-star-2 pointer-events-none absolute -left-[8%] bottom-[6%] hidden h-[22vmax] w-[22vmax] text-mint/[0.04] lg:block" />
 
       <div className="relative mx-auto max-w-edge edge">
         <div className="grid gap-y-10 lg:grid-cols-12 lg:gap-x-16">

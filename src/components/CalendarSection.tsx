@@ -48,10 +48,12 @@ const EventEditor = lazy(() =>
   import('./EventEditor').then((m) => ({ default: m.EventEditor })),
 )
 
-/** Enlace profundo a un evento: #/evento/<id> */
-function parseEventHash(): string | null {
-  const m = window.location.hash.match(/^#\/?evento\/([\w-]+)$/)
-  return m ? m[1] : null
+/** Enlace profundo a un evento: ruta real /evento/<id> o, por compatibilidad, #/evento/<id>. */
+function parseEventRoute(): string | null {
+  const p = window.location.pathname.match(/^\/evento\/([\w-]+)\/?$/)
+  if (p) return p[1]
+  const h = window.location.hash.match(/^#\/?evento\/([\w-]+)$/)
+  return h ? h[1] : null
 }
 
 /**
@@ -94,8 +96,9 @@ export function CalendarSection({
     configured ? (readCountsCache(range.start, range.end) ?? new Map()) : new Map(),
   )
   const [deepLinkId, setDeepLinkId] = useState<string | null>(() =>
-    parseEventHash(),
+    parseEventRoute(),
   )
+  const [focusEventId, setFocusEventId] = useState<string | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
   const cleaned = useRef(false)
 
@@ -152,11 +155,15 @@ export function CalendarSection({
     void refresh()
   }, [refresh])
 
-  // Enlace profundo a un evento (#/evento/<id>): abre su día al cargarlo.
+  // Enlace profundo a un evento (/evento/<id> o #/evento/<id>): abre su día.
   useEffect(() => {
-    const onHash = () => setDeepLinkId(parseEventHash())
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    const onNav = () => setDeepLinkId(parseEventRoute())
+    window.addEventListener('hashchange', onNav)
+    window.addEventListener('popstate', onNav)
+    return () => {
+      window.removeEventListener('hashchange', onNav)
+      window.removeEventListener('popstate', onNav)
+    }
   }, [])
 
   useEffect(() => {
@@ -165,7 +172,12 @@ export function CalendarSection({
     if (ev) {
       setDayKey(ev.event_date)
       setDayOpen(true)
+      setFocusEventId(ev.id)
       setDeepLinkId(null)
+      // Deja la URL limpia (raíz) tras abrir el evento compartido.
+      if (window.location.pathname.startsWith('/evento/')) {
+        window.history.replaceState(null, '', '/')
+      }
     }
   }, [deepLinkId, events])
 
@@ -195,6 +207,7 @@ export function CalendarSection({
   const canNext = cursorIndex(cursor) < cursorIndex(max)
 
   function selectDay(key: string) {
+    setFocusEventId(null)
     setDayKey(key)
     setDayOpen(true)
   }
@@ -375,11 +388,15 @@ export function CalendarSection({
 
       <DayPanel
         open={dayOpen}
-        onClose={() => setDayOpen(false)}
+        onClose={() => {
+          setDayOpen(false)
+          setFocusEventId(null)
+        }}
         dateKey={dayKey}
         events={dayEvents}
         isAdmin={admin}
         counts={counts}
+        focusId={focusEventId}
         onAttendanceChange={refreshCounts}
         onAdd={openNew}
         onEdit={openEdit}
